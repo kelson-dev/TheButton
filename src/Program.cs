@@ -26,15 +26,18 @@ foreach (var file in dir.EnumerateFiles())
         configs.TryAdd(config_guild_id, config!);
     }
 }
+WriteLine("Finished loading");
 
 DiscordSocketClient client = new(new()
 {
     AlwaysDownloadUsers = false,
-    GatewayIntents = GatewayIntents.Guilds | GatewayIntents.GuildPresences | GatewayIntents.GuildMessages,
+    GatewayIntents = GatewayIntents.Guilds   | GatewayIntents.GuildMessages,
     MessageCacheSize = 0,
 });
 
+
 await client.LoginAsync(TokenType.Bot, key);
+WriteLine("Logged in");
 
 DateTimeOffset created = DateTimeOffset.MinValue;
 
@@ -150,6 +153,7 @@ client.MessageReceived += async (message) =>
 };
 
 await client.StartAsync();
+WriteLine("Started");
 while (true)
     await Task.Delay(TimeSpan.FromMilliseconds(100));
 
@@ -173,6 +177,7 @@ async Task PersistConfig(ulong guildId, SocketUserMessage? message)
             var json = JsonSerializer.Serialize(config, Models.Default.GuildConfig);
             await File.WriteAllTextAsync(Path.Combine(config_dir, name), json);
             await (message?.ReplyAsync($"```json\n{json}\n```", allowedMentions: AllowedMentions.None) ?? Task.CompletedTask);
+            WriteLine("Persisted guild configuration");
         }
         catch (IOException)
         {
@@ -191,6 +196,7 @@ async Task PersistMatch(ulong guildId)
         {
             var json = JsonSerializer.Serialize(config, Models.Default.Match);
             await File.WriteAllTextAsync(Path.Combine(config_dir, name), json);
+            WriteLine("Persisted match state");
         }
         catch (IOException)
         {
@@ -202,6 +208,7 @@ async Task PersistMatch(ulong guildId)
         try
         {
             File.Delete(Path.Combine(config_dir, name));
+            WriteLine("Removed match state");
         }
         catch (IOException)
         {
