@@ -21,4 +21,9 @@ Use bare IDs in place of '12345', not tags/mentions.
 > @Bot configure LogChannelId 12345
 
 ## Start a match
+
 > @Bot start
+
+## Example
+
+![Example](example.png)
