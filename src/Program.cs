@@ -140,18 +140,34 @@ async Task Persist(ulong guildId, SocketUserMessage message)
     }
 }
 
-record Match(
+public record Match(
     ulong GuildId,
     ulong ChannelId,
     DateTimeOffset Created);
 
-record GuildConfig(
-    ulong GuildId,
-    ulong AccessRoleId,
-    ulong CategoryId,
-    ulong LogChannelId,
-    ulong GMRoleId)
+public record GuildConfig
 {
+    // setters required for source-gen deserialization
+    public ulong GuildId { get; set; }
+    public ulong AccessRoleId { get; set; }
+    public ulong CategoryId { get; set; }
+    public ulong LogChannelId { get; set; }
+    public ulong GMRoleId { get; set; }
+
+    public GuildConfig(
+        ulong guildId,
+        ulong accessRoleId,
+        ulong categoryId,
+        ulong logChannelId,
+        ulong gMRoleId)
+    {
+        GuildId = guildId;
+        AccessRoleId = accessRoleId;
+        CategoryId = categoryId;
+        LogChannelId = logChannelId;
+        GMRoleId = gMRoleId;
+    }
+
     public GuildConfig() : this(default, default, default, default, default) { }
 };
 
