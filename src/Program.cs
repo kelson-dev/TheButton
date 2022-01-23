@@ -1,4 +1,6 @@
-﻿WriteLine("Gate Open: START");
+﻿using Discord.Net;
+
+WriteLine("Gate Open: START");
 const ulong BOT_AUTHOR_ID = 188136808658239488;
 string key = GetEnvironmentVariable("credentials_token") ?? File.ReadAllText("./Configurations/bot.credentials");
 string config_dir = GetEnvironmentVariable("config_path") ?? "./Configurations";
@@ -66,7 +68,14 @@ client.MessageReceived += async (message) =>
                 var time = DateTimeOffset.Now;
                 TimeSpan duration = time - match.Created;
                 string log_message = $"Match started <t:{match.Created.ToUnixTimeSeconds()}:R>, ended by {author.Username} {author.Id} at <t:{DateTimeOffset.Now.ToUnixTimeSeconds()}:F>, lasted {duration.TotalSeconds} seconds";
-                await message.DeleteAsync(); // specifically delete message so logging bots see the deletion
+                try
+                {
+                    await message.DeleteAsync(); // specifically delete message so logging bots see the deletion
+                }
+                catch (HttpException e)
+                {
+                    WriteLine($"Did not have permission to delete message:\n{message.Author.Id} {author.Username}\n{message.Content}");
+                }
                 var update_task = HandleRecordUpdate(guild_config, context.Guild, author, match, time);
                 WriteLine($"{context.Guild.Name} {guild_id} {log_message}");
                 await text_channel.DeleteAsync(options: new() { AuditLogReason = $"Message sent by {author.Username}" });
