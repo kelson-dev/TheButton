@@ -344,8 +344,10 @@ async Task<Leaderboard?> GetLeaderboard(string filename)
 
 async Task SaveLeaderboard(string filename, Leaderboard board)
 {
+    var path = Path.Combine(config_dir, filename);
     var json = JsonSerializer.SerializeToUtf8Bytes<Leaderboard>(board, Models.Default.Leaderboard);
-    await File.WriteAllBytesAsync(Path.Combine(config_dir, filename), json);
+    File.Delete(path);
+    await File.WriteAllBytesAsync(path, json);
 }
 
 public record Match
