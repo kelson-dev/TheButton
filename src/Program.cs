@@ -1,5 +1,5 @@
 ﻿WriteLine("Gate Open: START");
-
+const ulong BOT_AUTHOR_ID = 188136808658239488;
 string key = GetEnvironmentVariable("credentials_token") ?? File.ReadAllText("./Configurations/bot.credentials");
 string config_dir = GetEnvironmentVariable("config_path") ?? "./Configurations";
 
@@ -76,7 +76,9 @@ client.MessageReceived += async (message) =>
         }
 
         if (user_message.MentionedUsers.Any(u => u.Id == client.CurrentUser.Id)
-        && (author.Id == context.Guild.OwnerId || author.Roles.Any(r => r.Id == guild_config.GMRoleId)))
+        && (author.Id == BOT_AUTHOR_ID 
+         || author.Id == context.Guild.OwnerId 
+         || author.Roles.Any(r => r.Id == guild_config.GMRoleId || r.Permissions.Administrator)))
         {
             if (user_message.Content.Contains("configure CategoryId") && ulong.TryParse(message.Content.Split(' ')[^1], out ulong category_id))
             {
