@@ -87,16 +87,21 @@ client.MessageReceived += async (message) =>
                 return;
             }
 
-            if (user_message.MentionedUsers.Any(u => u.Id == client.CurrentUser.Id)
-            && (author.Id == BOT_AUTHOR_ID
-             || author.Id == context.Guild.OwnerId
-             || author.Roles.Any(r => r.Id == guild_config.GMRoleId || r.Permissions.Administrator)))
+            
+            var reader = new ContentReader(message.Content);
+            if (!reader.TryReadMentionId(Mention.USER, Mention.NICKNAME, out ulong first_mentioned_role_id)
+                && first_mentioned_role_id == client.CurrentUser.Id)
+                return;
+            reader.TrimStart();
+            // global commands
+            if (reader.TryReadText("leaderboard") || reader.TryReadText("stats"))
             {
-                var reader = new ContentReader(message.Content);
-                if (!reader.TryReadMentionId(Mention.USER, Mention.NICKNAME, out ulong first_mentioned_role_id)
-                  && first_mentioned_role_id == client.CurrentUser.Id)
-                    return;
-                reader.TrimStart();
+                await ReplyWithLeaderboard(guild_config, context.Guild, author, user_message);
+            }
+            if (author.Id == BOT_AUTHOR_ID
+             || author.Id == context.Guild.OwnerId
+             || author.Roles.Any(r => r.Id == guild_config.GMRoleId || r.Permissions.Administrator))
+            {
                 if (reader.TryReadText("configure"))
                 {
                     reader.TrimStart();
@@ -133,10 +138,6 @@ client.MessageReceived += async (message) =>
                         await PersistConfig(guild_id, user_message);
                     }
                     return;
-                }
-                else if (reader.TryReadText("leaderboard") || reader.TryReadText("stats"))
-                {
-                    await ReplyWithLeaderboard(guild_config, context.Guild, author, user_message);
                 }
                 else if (reader.TryReadText("start"))
                 {
