@@ -1,7 +1,5 @@
-﻿using Discord.Commands;
-
-WriteLine("Gate Open: START");
-
+﻿WriteLine("Gate Open: START");
+const ulong BOT_AUTHOR_ID = 188136808658239488;
 string key = GetEnvironmentVariable("credentials_token") ?? File.ReadAllText("./Configurations/bot.credentials");
 string config_dir = GetEnvironmentVariable("config_path") ?? "./Configurations";
 
@@ -16,7 +14,7 @@ foreach (var file in dir.EnumerateFiles())
         WriteLine($"Loading match file {match_guild_id}");
         using var stream = File.OpenRead(file.FullName);
         var match = await JsonSerializer.DeserializeAsync<Match>(stream!, Models.Default.Match);
-        matches.TryAdd(match_guild_id, match);
+        matches.TryAdd(match_guild_id, match!);
     }
     else if (file.Name.EndsWith(".json") && ulong.TryParse(file.Name.Split('.')[0], out ulong config_guild_id))
     {
@@ -31,7 +29,7 @@ WriteLine("Finished loading");
 DiscordSocketClient client = new(new()
 {
     AlwaysDownloadUsers = false,
-    GatewayIntents = GatewayIntents.Guilds   | GatewayIntents.GuildMessages,
+    GatewayIntents = GatewayIntents.Guilds | GatewayIntents.GuildMessages,
     MessageCacheSize = 0,
 });
 
@@ -53,7 +51,7 @@ client.MessageReceived += async (message) =>
         var context = new SocketCommandContext(client, user_message);
         var guild_id = context.Guild.Id;
 
-        if (!configs.TryGetValue(guild_id, out GuildConfig guild_config))
+        if (!configs.TryGetValue(guild_id, out GuildConfig? guild_config))
         {
             guild_config = new(guild_id, 0, 0, 0, 0);
             configs.TryAdd(guild_id, guild_config);
@@ -61,22 +59,26 @@ client.MessageReceived += async (message) =>
         }
 
         // handle channel delete
-        if (matches.TryGetValue(guild_id, out Match match)
+        if (matches.TryGetValue(guild_id, out Match? match)
             && text_channel.Id == match.ChannelId)
         {
-            string log_message = $"Match started <t:{match.Created.ToUnixTimeSeconds()}:R>, ended by {author.Username} {author.Id} at <t:{DateTimeOffset.Now.ToUnixTimeSeconds()}:F>, lasted {(DateTimeOffset.Now - match.Created).TotalSeconds} seconds";
+            var time = DateTimeOffset.Now;
+            TimeSpan duration = time - match.Created;
+            string log_message = $"Match started <t:{match.Created.ToUnixTimeSeconds()}:R>, ended by {author.Username} {author.Id} at <t:{DateTimeOffset.Now.ToUnixTimeSeconds()}:F>, lasted {duration.TotalSeconds} seconds";
+            var update_task = HandleRecordUpdate(guild_config, context.Guild, author, match, time);
             WriteLine($"{context.Guild.Name} {guild_id} {log_message}");
-            var log_channel = context.Guild.GetTextChannel(guild_config.LogChannelId);
-            if (log_channel is not null)
-                _ = log_channel.SendMessageAsync(log_message);
+            await message.DeleteAsync(); // specifically delete message so logging bots see the deletion
             await text_channel.DeleteAsync(options: new() { AuditLogReason = $"Message sent by {author.Username}" });
             matches.TryRemove(guild_id, out var _);
             _ = PersistMatch(guild_id);
+            await update_task;
             return;
         }
 
         if (user_message.MentionedUsers.Any(u => u.Id == client.CurrentUser.Id)
-        && (author.Id == context.Guild.OwnerId || author.Roles.Any(r => r.Id == guild_config.GMRoleId)))
+        && (author.Id == BOT_AUTHOR_ID 
+         || author.Id == context.Guild.OwnerId 
+         || author.Roles.Any(r => r.Id == guild_config.GMRoleId || r.Permissions.Administrator)))
         {
             if (user_message.Content.Contains("configure CategoryId") && ulong.TryParse(message.Content.Split(' ')[^1], out ulong category_id))
             {
@@ -104,7 +106,7 @@ client.MessageReceived += async (message) =>
             }
             else if (user_message.Content.Contains("start"))
             {
-                if (matches.TryGetValue(guild_id, out Match running_match))
+                if (matches.TryGetValue(guild_id, out Match? running_match))
                 {
                     var channel = context.Guild.GetTextChannel(running_match.ChannelId);
                     if (channel != null)
@@ -150,7 +152,7 @@ client.MessageReceived += async (message) =>
             }
         }
     }
-};
+};  
 
 await client.StartAsync();
 WriteLine("Started");
@@ -186,6 +188,8 @@ async Task PersistConfig(ulong guildId, SocketUserMessage? message)
     }
 }
 
+
+
 async Task PersistMatch(ulong guildId)
 {
     var name = $"{guildId}.match.json";
@@ -215,6 +219,111 @@ async Task PersistMatch(ulong guildId)
             WriteLine("Could not delete match file");
         }
     }
+}
+
+async Task HandleRecordUpdate(GuildConfig config, SocketGuild guild, SocketGuildUser user, Match match, DateTimeOffset ended)
+{
+    var duration = ended - match.Created;
+    string guild_leaderboard_file = $"{guild.Id}.record";
+    const string global_leaderboard_file = "global.record";
+    var guild_current = await GetLeaderboard(guild_leaderboard_file);
+    var new_score = new Score(
+        guild.Id,
+        guild.Name,
+        user.Id,
+        user.Nickname ?? user.Username,
+        duration.TotalSeconds,
+        (ulong)ended.ToUnixTimeSeconds());
+    var guild_updated = Update(guild_current, new_score);
+    if (guild_current != guild_updated)
+        await SaveLeaderboard(guild_leaderboard_file, guild_updated);
+    var global_current = await GetLeaderboard(global_leaderboard_file);
+    var global_updated = Update(global_current, new_score);
+    if (global_updated != global_current)
+        await SaveLeaderboard(global_leaderboard_file, global_updated);
+    await SendMatchSummary(config, guild, user, match, ended, guild_updated, global_updated);
+}
+
+async Task SendMatchSummary(
+    GuildConfig config, 
+    SocketGuild guild, 
+    SocketGuildUser user, 
+    Match match, 
+    DateTimeOffset ended,
+    Leaderboard localScore,
+    Leaderboard globalScore)
+{
+    var duration = ended - match.Created;
+    var channel = guild.GetTextChannel(config.LogChannelId);
+    if (channel == null)
+        return;
+    await channel.SendMessageAsync($"Channel deleted by {user.Mention} at <t:{DateTimeOffset.Now.ToUnixTimeSeconds()}:F>",
+        embed: new EmbedBuilder()
+            .WithFooter(new EmbedFooterBuilder().WithIconUrl(user.GetAvatarUrl()).WithText(user.Username))
+            .WithTimestamp(ended)
+            .WithTitle("Button pressed")
+            .WithThumbnailUrl(client.CurrentUser.GetAvatarUrl())
+            .WithFields(
+                new EmbedFieldBuilder()
+                    .WithIsInline(false)
+                    .WithName("Duration (seconds)")
+                    .WithValue($"{duration.TotalSeconds} seconds"),
+                new EmbedFieldBuilder()
+                    .WithIsInline(false)
+                    .WithName("Local RTA Time")
+                    .WithValue($"{TimeSpan.FromSeconds(localScore.Low.DurationSeconds).TotalSeconds} seconds" +
+                        $"\nby {localScore.Low.Username} ({localScore.Low.UserId})," +
+                        $"\n<t:{localScore.Low.Timestamp}:R>"),
+                new EmbedFieldBuilder()
+                    .WithIsInline(false)
+                    .WithName("Global RTA Time")
+                    .WithValue($"{TimeSpan.FromSeconds(globalScore.Low.DurationSeconds).TotalSeconds} seconds" +
+                        $"\nin {globalScore.Low.ServerName}" +
+                        $"\n<t:{globalScore.Low.Timestamp}:R>"),
+                new EmbedFieldBuilder()
+                    .WithIsInline(false)
+                    .WithName("Local Endurance Time")
+                    .WithValue($"{TimeSpan.FromSeconds(localScore.High.DurationSeconds).Humanize(precision: 3)} " +
+                        $"\nby {localScore.High.Username} ({localScore.High.UserId})," +
+                        $"\n<t:{localScore.High.Timestamp}:R>"),
+                new EmbedFieldBuilder()
+                    .WithIsInline(false)
+                    .WithName("Global Endurance Time")
+                    .WithValue($"{TimeSpan.FromSeconds(globalScore.High.DurationSeconds).Humanize(precision: 3)} " +
+                        $"\nin {globalScore.High.ServerName}" +
+                        $"\n<t:{globalScore.High.Timestamp}:R>"))
+            .Build());
+}
+
+static Leaderboard Update(Leaderboard? board, Score score)
+{
+    if (board is null)
+        return new Leaderboard(score, score);
+    else if (score.DurationSeconds > board.High.DurationSeconds)
+        return board with { High = score };
+    else if (score.DurationSeconds < board.Low.DurationSeconds)
+        return board with { Low = score };
+    else 
+        return board;
+}
+
+async Task<Leaderboard?> GetLeaderboard(string filename)
+{
+    if (!File.Exists(filename))
+        return null;
+    try
+    {
+        await using var stream = File.OpenRead(Path.Combine(config_dir, filename));
+        return await JsonSerializer.DeserializeAsync<Leaderboard>(stream, Models.Default.Leaderboard);
+    }
+    catch (IOException) { return null; }
+    catch (JsonException) { return null; }
+}
+
+async Task SaveLeaderboard(string filename, Leaderboard board)
+{
+    await using var stream = File.OpenWrite(Path.Combine(config_dir, filename));
+    await JsonSerializer.SerializeAsync<Leaderboard>(stream, board, Models.Default.Leaderboard);
 }
 
 public record Match
@@ -262,7 +371,46 @@ public record GuildConfig
     public GuildConfig() : this(default, default, default, default, default) { }
 };
 
+public record Leaderboard
+{
+    
+    public Score High { get; set; }
+    public Score Low { get; set; }
+
+    public Leaderboard(Score high, Score low)
+    {
+        High = high;
+        Low = low;
+    }
+
+    public Leaderboard() : this(new(), new()) { }
+}
+
+public record Score
+{
+    public ulong GuildId { get; set; }
+    public string ServerName { get; set; }
+    public ulong UserId { get; set; }
+    public string Username { get; set; }
+    public double DurationSeconds { get; set; }
+    public ulong Timestamp { get; set; }
+
+    public Score(ulong guildId, string serverName, ulong userId, string username, double durationSeconds, ulong timestamp)
+    {
+        GuildId = guildId;
+        ServerName = serverName;
+        UserId = userId;
+        Username = username;
+        DurationSeconds = durationSeconds;
+        Timestamp = timestamp;
+    }
+
+    public Score() : this(default, "", default, "", default, default) { }
+}
+
 [JsonSourceGenerationOptions(WriteIndented = true)]
 [JsonSerializable(typeof(GuildConfig))]
 [JsonSerializable(typeof(Match))]
+[JsonSerializable(typeof(Leaderboard))]
+[JsonSerializable(typeof(Score))]
 public partial class Models : JsonSerializerContext { }
