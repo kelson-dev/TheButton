@@ -327,8 +327,6 @@ static Leaderboard Update(Leaderboard? board, Score score)
 
 async Task<Leaderboard?> GetLeaderboard(string filename)
 {
-    if (!File.Exists(Path.Combine(config_dir, filename)))
-        return null;
     try
     {
         return JsonSerializer.Deserialize<Leaderboard>(
