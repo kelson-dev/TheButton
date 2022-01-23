@@ -11,6 +11,7 @@ ConcurrentDictionary<ulong, Match> matches = new();
 var dir = new DirectoryInfo(config_dir);
 foreach (var file in dir.EnumerateFiles())
 {
+    WriteLine(file.FullName);
     if (file.Name.EndsWith(".match.json") && ulong.TryParse(file.Name.Split('.')[0], out ulong match_guild_id))
     {
         WriteLine($"Loading match file {match_guild_id}");
@@ -330,8 +331,10 @@ async Task<Leaderboard?> GetLeaderboard(string filename)
         return null;
     try
     {
-        await using var stream = File.OpenRead(Path.Combine(config_dir, filename));
-        return await JsonSerializer.DeserializeAsync<Leaderboard>(stream, Models.Default.Leaderboard);
+        return JsonSerializer.Deserialize<Leaderboard>(
+            await File.ReadAllBytesAsync(
+                Path.Combine(config_dir, filename)), 
+                Models.Default.Leaderboard);
     }
     catch (Exception e) 
     {
@@ -343,8 +346,8 @@ async Task<Leaderboard?> GetLeaderboard(string filename)
 
 async Task SaveLeaderboard(string filename, Leaderboard board)
 {
-    await using var stream = File.OpenWrite(Path.Combine(config_dir, filename));
-    await JsonSerializer.SerializeAsync<Leaderboard>(stream, board, Models.Default.Leaderboard);
+    var json = JsonSerializer.SerializeToUtf8Bytes<Leaderboard>(board, Models.Default.Leaderboard);
+    await File.WriteAllBytesAsync(Path.Combine(config_dir, filename), json);
 }
 
 public record Match
