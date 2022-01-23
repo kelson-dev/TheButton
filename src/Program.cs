@@ -50,106 +50,112 @@ client.MessageReceived += async (message) =>
     {
         var context = new SocketCommandContext(client, user_message);
         var guild_id = context.Guild.Id;
-
-        if (!configs.TryGetValue(guild_id, out GuildConfig? guild_config))
+        try
         {
-            guild_config = new(guild_id, 0, 0, 0, 0);
-            configs.TryAdd(guild_id, guild_config);
-            await PersistConfig(guild_id, null);
-        }
+            if (!configs.TryGetValue(guild_id, out GuildConfig? guild_config))
+            {
+                guild_config = new(guild_id, 0, 0, 0, 0);
+                configs.TryAdd(guild_id, guild_config);
+                await PersistConfig(guild_id, null);
+            }
 
-        // handle channel delete
-        if (matches.TryGetValue(guild_id, out Match? match)
-            && text_channel.Id == match.ChannelId)
-        {
-            var time = DateTimeOffset.Now;
-            TimeSpan duration = time - match.Created;
-            string log_message = $"Match started <t:{match.Created.ToUnixTimeSeconds()}:R>, ended by {author.Username} {author.Id} at <t:{DateTimeOffset.Now.ToUnixTimeSeconds()}:F>, lasted {duration.TotalSeconds} seconds";
-            var update_task = HandleRecordUpdate(guild_config, context.Guild, author, match, time);
-            WriteLine($"{context.Guild.Name} {guild_id} {log_message}");
-            await message.DeleteAsync(); // specifically delete message so logging bots see the deletion
-            await text_channel.DeleteAsync(options: new() { AuditLogReason = $"Message sent by {author.Username}" });
-            matches.TryRemove(guild_id, out var _);
-            _ = PersistMatch(guild_id);
-            await update_task;
-            return;
-        }
+            // handle channel delete
+            if (matches.TryGetValue(guild_id, out Match? match)
+                && text_channel.Id == match.ChannelId)
+            {
+                var time = DateTimeOffset.Now;
+                TimeSpan duration = time - match.Created;
+                string log_message = $"Match started <t:{match.Created.ToUnixTimeSeconds()}:R>, ended by {author.Username} {author.Id} at <t:{DateTimeOffset.Now.ToUnixTimeSeconds()}:F>, lasted {duration.TotalSeconds} seconds";
+                await message.DeleteAsync(); // specifically delete message so logging bots see the deletion
+                var update_task = HandleRecordUpdate(guild_config, context.Guild, author, match, time);
+                WriteLine($"{context.Guild.Name} {guild_id} {log_message}");
+                await text_channel.DeleteAsync(options: new() { AuditLogReason = $"Message sent by {author.Username}" });
+                matches.TryRemove(guild_id, out var _);
+                _ = PersistMatch(guild_id);
+                await update_task;
+                return;
+            }
 
-        if (user_message.MentionedUsers.Any(u => u.Id == client.CurrentUser.Id)
-        && (author.Id == BOT_AUTHOR_ID 
-         || author.Id == context.Guild.OwnerId 
-         || author.Roles.Any(r => r.Id == guild_config.GMRoleId || r.Permissions.Administrator)))
-        {
-            if (user_message.Content.Contains("configure CategoryId") && ulong.TryParse(message.Content.Split(' ')[^1], out ulong category_id))
+            if (user_message.MentionedUsers.Any(u => u.Id == client.CurrentUser.Id)
+            && (author.Id == BOT_AUTHOR_ID
+             || author.Id == context.Guild.OwnerId
+             || author.Roles.Any(r => r.Id == guild_config.GMRoleId || r.Permissions.Administrator)))
             {
-                configs.AddOrUpdate(guild_id, id => guild_config with { CategoryId = category_id }, (id, config) => config with { CategoryId = category_id });
-                await PersistConfig(guild_id, user_message);
-                return;
-            }
-            else if (user_message.Content.Contains("configure AccessRoleId") && ulong.TryParse(message.Content.Split(' ')[^1], out ulong access_role_id))
-            {
-                configs.AddOrUpdate(guild_id, id => guild_config with { AccessRoleId = access_role_id }, (id, config) => config with { AccessRoleId = access_role_id });
-                await PersistConfig(guild_id, user_message);
-                return;
-            }
-            else if (user_message.Content.Contains("configure LogChannelId") && ulong.TryParse(message.Content.Split(' ')[^1], out ulong log_channel_id))
-            {
-                configs.AddOrUpdate(guild_id, id => guild_config with { LogChannelId = log_channel_id }, (id, config) => config with { LogChannelId = log_channel_id });
-                await PersistConfig(guild_id, user_message);
-                return;
-            }
-            else if (user_message.Content.Contains("configure GMRoleId") && ulong.TryParse(message.Content.Split(' ')[^1], out ulong mod_role_id))
-            {
-                configs.AddOrUpdate(guild_id, id => guild_config with { GMRoleId = mod_role_id }, (id, config) => config with { GMRoleId = mod_role_id });
-                await PersistConfig(guild_id, user_message);
-                return;
-            }
-            else if (user_message.Content.Contains("start"))
-            {
-                if (matches.TryGetValue(guild_id, out Match? running_match))
+                if (user_message.Content.Contains("configure CategoryId") && ulong.TryParse(message.Content.Split(' ')[^1], out ulong category_id))
                 {
-                    var channel = context.Guild.GetTextChannel(running_match.ChannelId);
-                    if (channel != null)
+                    configs.AddOrUpdate(guild_id, id => guild_config with { CategoryId = category_id }, (id, config) => config with { CategoryId = category_id });
+                    await PersistConfig(guild_id, user_message);
+                    return;
+                }
+                else if (user_message.Content.Contains("configure AccessRoleId") && ulong.TryParse(message.Content.Split(' ')[^1], out ulong access_role_id))
+                {
+                    configs.AddOrUpdate(guild_id, id => guild_config with { AccessRoleId = access_role_id }, (id, config) => config with { AccessRoleId = access_role_id });
+                    await PersistConfig(guild_id, user_message);
+                    return;
+                }
+                else if (user_message.Content.Contains("configure LogChannelId") && ulong.TryParse(message.Content.Split(' ')[^1], out ulong log_channel_id))
+                {
+                    configs.AddOrUpdate(guild_id, id => guild_config with { LogChannelId = log_channel_id }, (id, config) => config with { LogChannelId = log_channel_id });
+                    await PersistConfig(guild_id, user_message);
+                    return;
+                }
+                else if (user_message.Content.Contains("configure GMRoleId") && ulong.TryParse(message.Content.Split(' ')[^1], out ulong mod_role_id))
+                {
+                    configs.AddOrUpdate(guild_id, id => guild_config with { GMRoleId = mod_role_id }, (id, config) => config with { GMRoleId = mod_role_id });
+                    await PersistConfig(guild_id, user_message);
+                    return;
+                }
+                else if (user_message.Content.Contains("start"))
+                {
+                    if (matches.TryGetValue(guild_id, out Match? running_match))
                     {
-                        var time = running_match.Created.ToUnixTimeSeconds();
-                        await user_message.ReplyAsync($"A match is already running in <#{running_match.ChannelId}> since <t:{time}:f>, <t:{time}:R>", allowedMentions: AllowedMentions.None);
+                        var channel = context.Guild.GetTextChannel(running_match.ChannelId);
+                        if (channel != null)
+                        {
+                            var time = running_match.Created.ToUnixTimeSeconds();
+                            await user_message.ReplyAsync($"A match is already running in <#{running_match.ChannelId}> since <t:{time}:f>, <t:{time}:R>", allowedMentions: AllowedMentions.None);
+                            return;
+                        }
+                        else
+                        {
+                            matches.TryRemove(guild_id, out var _);
+                            await PersistMatch(guild_id);
+                        }
+                    }
+                    List<string> invalid_configs = new();
+                    if (guild_config.CategoryId == 0 || context.Guild.GetCategoryChannel(guild_config.CategoryId) == null)
+                        invalid_configs.Add($"CategoryId: {guild_config.CategoryId}");
+                    if (guild_config.AccessRoleId == 0 || context.Guild.GetRole(guild_config.AccessRoleId) == null)
+                        invalid_configs.Add($"AccessRoleId: {guild_config.AccessRoleId}");
+                    if (guild_config.GMRoleId == 0 || context.Guild.GetRole(guild_config.GMRoleId) == null)
+                        invalid_configs.Add($"GMRoleId: {guild_config.GMRoleId}");
+                    if (guild_config.LogChannelId == 0 || context.Guild.GetTextChannel(guild_config.LogChannelId) == null)
+                        invalid_configs.Add($"LogChannelId: {guild_config.LogChannelId}");
+                    if (invalid_configs.Count > 0)
+                    {
+                        await user_message.ReplyAsync(
+                            $"The following configs are unset or point to objects that could not be found: \n{string.Join(Environment.NewLine, invalid_configs)}\n"
+                            + "README: https://github.com/kelson-dev/TheButton/blob/deploy/README.md",
+                            allowedMentions: AllowedMentions.None);
                         return;
                     }
-                    else
+
+                    if (configs.TryGetValue(guild_id, out var start_config))
                     {
-                        matches.TryRemove(guild_id, out var _);
-                        await PersistMatch(guild_id);
+                        var channel = await context.Guild.CreateTextChannelAsync("self-destructs", func: Configure(context.Guild, start_config));
+                        var match_state = new Match(guild_id, channel.Id, DateTimeOffset.Now);
+                        await channel.SendMessageAsync("If a message is sent here the channel will be deleted");
+                        matches.AddOrUpdate(guild_id, match_state, (id, match) => match_state);
+                        _ = PersistMatch(guild_id);
+                        await user_message.ReplyAsync($"<#{channel.Id}>", allowedMentions: AllowedMentions.None);
+                        return;
                     }
                 }
-                List<string> invalid_configs = new();
-                if (guild_config.CategoryId == 0 || context.Guild.GetCategoryChannel(guild_config.CategoryId) == null)
-                    invalid_configs.Add($"CategoryId: {guild_config.CategoryId}");
-                if (guild_config.AccessRoleId == 0 || context.Guild.GetRole(guild_config.AccessRoleId) == null)
-                    invalid_configs.Add($"AccessRoleId: {guild_config.AccessRoleId}");
-                if (guild_config.GMRoleId == 0 || context.Guild.GetRole(guild_config.GMRoleId) == null)
-                    invalid_configs.Add($"GMRoleId: {guild_config.GMRoleId}");
-                if (guild_config.LogChannelId == 0 || context.Guild.GetTextChannel(guild_config.LogChannelId) == null)
-                    invalid_configs.Add($"LogChannelId: {guild_config.LogChannelId}");
-                if (invalid_configs.Count > 0)
-                {
-                    await user_message.ReplyAsync(
-                        $"The following configs are unset or point to objects that could not be found: \n{string.Join(Environment.NewLine, invalid_configs)}\n"
-                        + "README: https://github.com/kelson-dev/TheButton/blob/deploy/README.md",
-                        allowedMentions: AllowedMentions.None);
-                    return;
-                }
-
-                if (configs.TryGetValue(guild_id, out var start_config))
-                {
-                    var channel = await context.Guild.CreateTextChannelAsync("self-destructs", func: Configure(context.Guild, start_config));
-                    var match_state = new Match(guild_id, channel.Id, DateTimeOffset.Now);
-                    await channel.SendMessageAsync("If a message is sent here the channel will be deleted");
-                    matches.AddOrUpdate(guild_id, match_state, (id, match) => match_state);
-                    _ = PersistMatch(guild_id);
-                    await user_message.ReplyAsync($"<#{channel.Id}>", allowedMentions: AllowedMentions.None);
-                    return;
-                }
             }
+        }
+        catch (Exception e)
+        {
+            WriteLine(e);
         }
     }
 };  
@@ -202,9 +208,10 @@ async Task PersistMatch(ulong guildId)
             await File.WriteAllTextAsync(Path.Combine(config_dir, name), json);
             WriteLine("Persisted match state");
         }
-        catch (IOException)
+        catch (IOException e)
         {
             WriteLine("Could not persist match update");
+            WriteLine(e);
         }
     }
     else
@@ -214,9 +221,10 @@ async Task PersistMatch(ulong guildId)
             File.Delete(Path.Combine(config_dir, name));
             WriteLine("Removed match state");
         }
-        catch (IOException)
+        catch (IOException e)
         {
             WriteLine("Could not delete match file");
+            WriteLine(e);
         }
     }
 }
