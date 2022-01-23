@@ -316,8 +316,12 @@ async Task<Leaderboard?> GetLeaderboard(string filename)
         await using var stream = File.OpenRead(Path.Combine(config_dir, filename));
         return await JsonSerializer.DeserializeAsync<Leaderboard>(stream, Models.Default.Leaderboard);
     }
-    catch (IOException) { return null; }
-    catch (JsonException) { return null; }
+    catch (Exception e) 
+    {
+        WriteLine(e.Message);
+        WriteLine(e.StackTrace);
+        return null; 
+    }
 }
 
 async Task SaveLeaderboard(string filename, Leaderboard board)
