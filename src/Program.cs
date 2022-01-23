@@ -1,7 +1,8 @@
-﻿using Discord.Net;
+﻿const string GLOBAL_LEADERBOARD_FILE = "global.record";
+const ulong BOT_AUTHOR_ID = 188136808658239488;
 
 WriteLine("Gate Open: START");
-const ulong BOT_AUTHOR_ID = 188136808658239488;
+
 string key = GetEnvironmentVariable("credentials_token") ?? File.ReadAllText("./Configurations/bot.credentials");
 string config_dir = GetEnvironmentVariable("config_path") ?? "./Configurations";
 
@@ -91,31 +92,53 @@ client.MessageReceived += async (message) =>
              || author.Id == context.Guild.OwnerId
              || author.Roles.Any(r => r.Id == guild_config.GMRoleId || r.Permissions.Administrator)))
             {
-                if (user_message.Content.Contains("configure CategoryId") && ulong.TryParse(message.Content.Split(' ')[^1], out ulong category_id))
+                var reader = new ContentReader(message.Content);
+                if (!reader.TryReadMentionId(Mention.USER, Mention.NICKNAME, out ulong first_mentioned_role_id)
+                  && first_mentioned_role_id == client.CurrentUser.Id)
+                    return;
+                reader.TrimStart();
+                if (reader.TryReadText("configure"))
                 {
-                    configs.AddOrUpdate(guild_id, id => guild_config with { CategoryId = category_id }, (id, config) => config with { CategoryId = category_id });
-                    await PersistConfig(guild_id, user_message);
+                    reader.TrimStart();
+                    if (reader.TryReadText(nameof(GuildConfig.CategoryId)) && reader.TrimStart().TryReadU64(out ulong category_id))
+                    {
+                        configs.AddOrUpdate(guild_id, id => guild_config with { CategoryId = category_id }, (id, config) => config with { CategoryId = category_id });
+                        await PersistConfig(guild_id, user_message);
+                    }
+                    else if (reader.TryReadText(nameof(GuildConfig.AccessRoleId)) && reader.TrimStart().TryReadU64(out ulong access_role_id))
+                    {
+                        configs.AddOrUpdate(guild_id, id => guild_config with { AccessRoleId = access_role_id }, (id, config) => config with { AccessRoleId = access_role_id });
+                        await PersistConfig(guild_id, user_message);
+                    }
+                    else if (reader.TryReadText(nameof(GuildConfig.LogChannelId)) && reader.TrimStart().TryReadU64(out ulong log_channel_id))
+                    {
+                        configs.AddOrUpdate(guild_id, id => guild_config with { LogChannelId = log_channel_id }, (id, config) => config with { LogChannelId = log_channel_id });
+                        await PersistConfig(guild_id, user_message);
+                    }
+                    else if (reader.TryReadText(nameof(GuildConfig.GMRoleId)) && reader.TrimStart().TryReadU64(out ulong mod_role_id))
+                    {
+                        configs.AddOrUpdate(guild_id, id => guild_config with { GMRoleId = mod_role_id }, (id, config) => config with { GMRoleId = mod_role_id });
+                        await PersistConfig(guild_id, user_message);
+                    }
+                    else if (reader.TryReadText(nameof(GuildConfig.RtaRoleId)))
+                    {
+                        ulong? rta_id = reader.TrimStart().TryReadU64(out ulong rta_role_id) ? rta_role_id : null;
+                        configs.AddOrUpdate(guild_id, id => guild_config with { RtaRoleId = rta_id }, (id, config) => config with { RtaRoleId = rta_id });
+                        await PersistConfig(guild_id, user_message);
+                    }
+                    else if (reader.TryReadText(nameof(GuildConfig.EnduranceRoleId)))
+                    {
+                        ulong? end_id = reader.TrimStart().TryReadU64(out ulong endurance_role_id) ? endurance_role_id : null;
+                        configs.AddOrUpdate(guild_id, id => guild_config with { EnduranceRoleId = end_id }, (id, config) => config with { EnduranceRoleId = end_id });
+                        await PersistConfig(guild_id, user_message);
+                    }
                     return;
                 }
-                else if (user_message.Content.Contains("configure AccessRoleId") && ulong.TryParse(message.Content.Split(' ')[^1], out ulong access_role_id))
+                else if (reader.TryReadText("leaderboard") || reader.TryReadText("stats"))
                 {
-                    configs.AddOrUpdate(guild_id, id => guild_config with { AccessRoleId = access_role_id }, (id, config) => config with { AccessRoleId = access_role_id });
-                    await PersistConfig(guild_id, user_message);
-                    return;
+                    await ReplyWithLeaderboard(guild_config, context.Guild, author, user_message);
                 }
-                else if (user_message.Content.Contains("configure LogChannelId") && ulong.TryParse(message.Content.Split(' ')[^1], out ulong log_channel_id))
-                {
-                    configs.AddOrUpdate(guild_id, id => guild_config with { LogChannelId = log_channel_id }, (id, config) => config with { LogChannelId = log_channel_id });
-                    await PersistConfig(guild_id, user_message);
-                    return;
-                }
-                else if (user_message.Content.Contains("configure GMRoleId") && ulong.TryParse(message.Content.Split(' ')[^1], out ulong mod_role_id))
-                {
-                    configs.AddOrUpdate(guild_id, id => guild_config with { GMRoleId = mod_role_id }, (id, config) => config with { GMRoleId = mod_role_id });
-                    await PersistConfig(guild_id, user_message);
-                    return;
-                }
-                else if (user_message.Content.Contains("start"))
+                else if (reader.TryReadText("start"))
                 {
                     if (matches.TryGetValue(guild_id, out Match? running_match))
                     {
@@ -130,17 +153,22 @@ client.MessageReceived += async (message) =>
                         {
                             matches.TryRemove(guild_id, out var _);
                             await PersistMatch(guild_id);
+                            return;
                         }
                     }
                     List<string> invalid_configs = new();
                     if (guild_config.CategoryId == 0 || context.Guild.GetCategoryChannel(guild_config.CategoryId) == null)
-                        invalid_configs.Add($"CategoryId: {guild_config.CategoryId}");
+                        invalid_configs.Add($"CategoryId: {guild_config.CategoryId} could not be found");
                     if (guild_config.AccessRoleId == 0 || context.Guild.GetRole(guild_config.AccessRoleId) == null)
-                        invalid_configs.Add($"AccessRoleId: {guild_config.AccessRoleId}");
+                        invalid_configs.Add($"AccessRoleId: {guild_config.AccessRoleId} could not be found");
                     if (guild_config.GMRoleId == 0 || context.Guild.GetRole(guild_config.GMRoleId) == null)
-                        invalid_configs.Add($"GMRoleId: {guild_config.GMRoleId}");
+                        invalid_configs.Add($"GMRoleId: {guild_config.GMRoleId}  could not be found");
                     if (guild_config.LogChannelId == 0 || context.Guild.GetTextChannel(guild_config.LogChannelId) == null)
-                        invalid_configs.Add($"LogChannelId: {guild_config.LogChannelId}");
+                        invalid_configs.Add($"LogChannelId: {guild_config.LogChannelId} could not be found");
+                    if (guild_config.RtaRoleId is not null && context.Guild.GetRole(guild_config.RtaRoleId.Value) is null)
+                        invalid_configs.Add($"RtaRoleId: {guild_config.RtaRoleId} could not be found");
+                    if (guild_config.EnduranceRoleId is not null && context.Guild.GetRole(guild_config.EnduranceRoleId.Value) is null)
+                        invalid_configs.Add($"EnduranceRoleId: {guild_config.EnduranceRoleId} could not be found");
                     if (invalid_configs.Count > 0)
                     {
                         await user_message.ReplyAsync(
@@ -204,8 +232,6 @@ async Task PersistConfig(ulong guildId, SocketUserMessage? message)
     }
 }
 
-
-
 async Task PersistMatch(ulong guildId)
 {
     var name = $"{guildId}.match.json";
@@ -239,11 +265,22 @@ async Task PersistMatch(ulong guildId)
     }
 }
 
+async Task ReplyWithLeaderboard(GuildConfig config, SocketGuild guild, SocketGuildUser user, SocketUserMessage message)
+{
+    string guild_leaderboard_file = $"{guild.Id}.record";
+    var guild_current = await GetLeaderboard(guild_leaderboard_file);
+    var global_current = await GetLeaderboard(GLOBAL_LEADERBOARD_FILE);
+    await message.ReplyAsync("",
+        embed: BuildLeaderboardEmbed(DateTimeOffset.Now, guild_current, global_current!)
+            .WithTitle("Current Button Leaderboard")
+            .Build(),
+        allowedMentions: AllowedMentions.None);
+}
+
 async Task HandleRecordUpdate(GuildConfig config, SocketGuild guild, SocketGuildUser user, Match match, DateTimeOffset ended)
 {
     var duration = ended - match.Created;
     string guild_leaderboard_file = $"{guild.Id}.record";
-    const string global_leaderboard_file = "global.record";
     var guild_current = await GetLeaderboard(guild_leaderboard_file);
     var new_score = new Score(
         guild.Id,
@@ -253,12 +290,36 @@ async Task HandleRecordUpdate(GuildConfig config, SocketGuild guild, SocketGuild
         duration.TotalSeconds,
         (ulong)ended.ToUnixTimeSeconds());
     var guild_updated = Update(guild_current, new_score);
+    var guild_save_task = Task.CompletedTask;
     if (guild_current != guild_updated)
-        await SaveLeaderboard(guild_leaderboard_file, guild_updated);
-    var global_current = await GetLeaderboard(global_leaderboard_file);
+    {
+        guild_save_task = SaveLeaderboard(guild_leaderboard_file, guild_updated);
+        if (guild_updated.High != guild_current?.High && config.EnduranceRoleId is ulong endurance_role_id && duration > TimeSpan.FromHours(8))
+        {
+            var endurance_role = guild.GetRole(endurance_role_id);
+            if (endurance_role is not null)
+            {
+                foreach (var previous in endurance_role.Members)
+                    await previous.RemoveRoleAsync(endurance_role_id);
+                await user.AddRoleAsync(endurance_role_id);
+            }
+        }
+        if (guild_updated.Low != guild_current?.Low && config.RtaRoleId is ulong rta_role_id && duration < TimeSpan.FromSeconds(1.5))
+        {
+            var rta_role = guild.GetRole(rta_role_id);
+            if (rta_role is not null)
+            {
+                foreach (var previous in rta_role.Members)
+                    await previous.RemoveRoleAsync(rta_role_id);
+                await user.AddRoleAsync(rta_role_id);
+            }
+        }
+    }
+    var global_current = await GetLeaderboard(GLOBAL_LEADERBOARD_FILE);
     var global_updated = Update(global_current, new_score);
     if (global_updated != global_current)
-        await SaveLeaderboard(global_leaderboard_file, global_updated);
+        await SaveLeaderboard(GLOBAL_LEADERBOARD_FILE, global_updated);
+    await guild_save_task;
     await SendMatchSummary(config, guild, user, match, ended, guild_updated, global_updated);
 }
 
@@ -276,41 +337,55 @@ async Task SendMatchSummary(
     if (channel == null)
         return;
     await channel.SendMessageAsync($"Channel deleted by {user.Mention} at <t:{DateTimeOffset.Now.ToUnixTimeSeconds()}:F>",
-        embed: new EmbedBuilder()
+        embed: BuildLeaderboardEmbed(ended, localScore, globalScore,
+            new EmbedFieldBuilder()
+                    .WithIsInline(false)
+                    .WithName("Duration")
+                    .WithValue($"{duration.TotalSeconds} seconds\n{duration.Humanize(precision: 3)}"))
             .WithFooter(new EmbedFooterBuilder().WithIconUrl(user.GetAvatarUrl()).WithText(user.Username))
-            .WithTimestamp(ended)
             .WithTitle("Button pressed")
             .WithThumbnailUrl(client.CurrentUser.GetAvatarUrl())
-            .WithFields(
-                new EmbedFieldBuilder()
-                    .WithIsInline(false)
-                    .WithName("Duration (seconds)")
-                    .WithValue($"{duration.TotalSeconds} seconds"),
-                new EmbedFieldBuilder()
-                    .WithIsInline(false)
-                    .WithName("Local RTA Time")
-                    .WithValue($"{TimeSpan.FromSeconds(localScore.Low.DurationSeconds).TotalSeconds} seconds" +
-                        $"\nby {localScore.Low.Username} ({localScore.Low.UserId})," +
-                        $"\n<t:{localScore.Low.Timestamp}:R>"),
-                new EmbedFieldBuilder()
-                    .WithIsInline(false)
-                    .WithName("Global RTA Time")
-                    .WithValue($"{TimeSpan.FromSeconds(globalScore.Low.DurationSeconds).TotalSeconds} seconds" +
-                        $"\nin {globalScore.Low.ServerName}" +
-                        $"\n<t:{globalScore.Low.Timestamp}:R>"),
-                new EmbedFieldBuilder()
-                    .WithIsInline(false)
-                    .WithName("Local Endurance Time")
-                    .WithValue($"{TimeSpan.FromSeconds(localScore.High.DurationSeconds).Humanize(precision: 3)} " +
-                        $"\nby {localScore.High.Username} ({localScore.High.UserId})," +
-                        $"\n<t:{localScore.High.Timestamp}:R>"),
-                new EmbedFieldBuilder()
-                    .WithIsInline(false)
-                    .WithName("Global Endurance Time")
-                    .WithValue($"{TimeSpan.FromSeconds(globalScore.High.DurationSeconds).Humanize(precision: 3)} " +
-                        $"\nin {globalScore.High.ServerName}" +
-                        $"\n<t:{globalScore.High.Timestamp}:R>"))
             .Build());
+}
+
+static EmbedBuilder BuildLeaderboardEmbed(DateTimeOffset time, Leaderboard? localScore, Leaderboard globalScore, params EmbedFieldBuilder[] preceedingFields)
+{
+    var local_rta_field = localScore is null
+        ? new EmbedFieldBuilder().WithName("Local RTA Time").WithValue("None")
+        : new EmbedFieldBuilder()
+                .WithIsInline(false)
+                .WithName("Local RTA Time")
+                .WithValue($"{TimeSpan.FromSeconds(localScore.Low.DurationSeconds).TotalSeconds} seconds" +
+                    $"\nby {localScore.Low.Username} ({localScore.Low.UserId})," +
+                    $"\n<t:{localScore.Low.Timestamp}:R>");
+    var local_endurance_field = localScore is null
+        ? new EmbedFieldBuilder().WithName("Local Endurance Time").WithValue("None")
+        : new EmbedFieldBuilder()
+                .WithIsInline(false)
+                .WithName("Local Endurance Time")
+                .WithValue($"{TimeSpan.FromSeconds(localScore.High.DurationSeconds).Humanize(precision: 3)} " +
+                    $"\nby {localScore.High.Username} ({localScore.High.UserId})," +
+                    $"\n<t:{localScore.High.Timestamp}:R>");
+    var builder = new EmbedBuilder().WithTimestamp(time);
+    if (preceedingFields is { Length: > 0 })
+        builder = builder.WithFields(preceedingFields);
+    builder = builder
+        .WithFields(
+            local_rta_field,
+            new EmbedFieldBuilder()
+                .WithIsInline(false)
+                .WithName("Global RTA Time")
+                .WithValue($"{TimeSpan.FromSeconds(globalScore.Low.DurationSeconds).TotalSeconds} seconds" +
+                    $"\nin {globalScore.Low.ServerName}" +
+                    $"\n<t:{globalScore.Low.Timestamp}:R>"),
+            local_endurance_field,
+            new EmbedFieldBuilder()
+                .WithIsInline(false)
+                .WithName("Global Endurance Time")
+                .WithValue($"{TimeSpan.FromSeconds(globalScore.High.DurationSeconds).Humanize(precision: 3)} " +
+                    $"\nin {globalScore.High.ServerName}" +
+                    $"\n<t:{globalScore.High.Timestamp}:R>"));
+    return builder;
 }
 
 static Leaderboard Update(Leaderboard? board, Score score)
@@ -349,92 +424,3 @@ async Task SaveLeaderboard(string filename, Leaderboard board)
     File.Delete(path);
     await File.WriteAllBytesAsync(path, json);
 }
-
-public record Match
-{
-    public ulong GuildId { get; set; }
-    public ulong ChannelId { get; set; }
-    public DateTimeOffset Created { get; set; }
-
-    public Match(
-        ulong guildId,
-        ulong channelId,
-        DateTimeOffset created)
-    {
-        GuildId = guildId;
-        ChannelId = channelId;
-        Created = created;
-    }
-
-    public Match() : this(default, default, default) { }
-}
-
-public record GuildConfig
-{
-    // setters required for source-gen deserialization
-    public ulong GuildId { get; set; }
-    public ulong AccessRoleId { get; set; }
-    public ulong CategoryId { get; set; }
-    public ulong LogChannelId { get; set; }
-    public ulong GMRoleId { get; set; }
-
-    public GuildConfig(
-        ulong guildId,
-        ulong accessRoleId,
-        ulong categoryId,
-        ulong logChannelId,
-        ulong gMRoleId)
-    {
-        GuildId = guildId;
-        AccessRoleId = accessRoleId;
-        CategoryId = categoryId;
-        LogChannelId = logChannelId;
-        GMRoleId = gMRoleId;
-    }
-
-    public GuildConfig() : this(default, default, default, default, default) { }
-};
-
-public record Leaderboard
-{
-    
-    public Score High { get; set; }
-    public Score Low { get; set; }
-
-    public Leaderboard(Score high, Score low)
-    {
-        High = high;
-        Low = low;
-    }
-
-    public Leaderboard() : this(new(), new()) { }
-}
-
-public record Score
-{
-    public ulong GuildId { get; set; }
-    public string ServerName { get; set; }
-    public ulong UserId { get; set; }
-    public string Username { get; set; }
-    public double DurationSeconds { get; set; }
-    public ulong Timestamp { get; set; }
-
-    public Score(ulong guildId, string serverName, ulong userId, string username, double durationSeconds, ulong timestamp)
-    {
-        GuildId = guildId;
-        ServerName = serverName;
-        UserId = userId;
-        Username = username;
-        DurationSeconds = durationSeconds;
-        Timestamp = timestamp;
-    }
-
-    public Score() : this(default, "", default, "", default, default) { }
-}
-
-[JsonSourceGenerationOptions(WriteIndented = true)]
-[JsonSerializable(typeof(GuildConfig))]
-[JsonSerializable(typeof(Match))]
-[JsonSerializable(typeof(Leaderboard))]
-[JsonSerializable(typeof(Score))]
-public partial class Models : JsonSerializerContext { }

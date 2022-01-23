@@ -9,6 +9,8 @@ global using System.Collections.Generic;
 global using static System.Console;
 global using static System.Environment;
 global using Discord;
+global using Discord.Net;
 global using Discord.WebSocket;
 global using Discord.Commands;
 global using Humanizer;
+global using SelfDestructChannel;
