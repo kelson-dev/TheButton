@@ -129,12 +129,16 @@ client.MessageReceived += async (message) =>
                     {
                         ulong? rta_id = reader.TrimStart().TryReadU64(out ulong rta_role_id) ? rta_role_id : null;
                         configs.AddOrUpdate(guild_id, id => guild_config with { RtaRoleId = rta_id }, (id, config) => config with { RtaRoleId = rta_id });
+                        if (rta_id is not null && !(context.Guild.GetUser(client.CurrentUser.Id)?.GuildPermissions.ManageRoles ?? false))
+                            await user_message.ReplyAsync("To use role features make sure I have 'ManageRoles' permission. I don't request this permission by default with the standard invite link.");
                         await PersistConfig(guild_id, user_message);
                     }
                     else if (reader.TryReadText(nameof(GuildConfig.EnduranceRoleId)))
                     {
                         ulong? end_id = reader.TrimStart().TryReadU64(out ulong endurance_role_id) ? endurance_role_id : null;
                         configs.AddOrUpdate(guild_id, id => guild_config with { EnduranceRoleId = end_id }, (id, config) => config with { EnduranceRoleId = end_id });
+                        if (end_id is not null && !(context.Guild.GetUser(client.CurrentUser.Id)?.GuildPermissions.ManageRoles ?? false))
+                            await user_message.ReplyAsync("To use role features make sure I have 'ManageRoles' permission. I don't request this permission by default with the standard invite link.");
                         await PersistConfig(guild_id, user_message);
                     }
                     return;
@@ -295,24 +299,27 @@ async Task HandleRecordUpdate(GuildConfig config, SocketGuild guild, SocketGuild
     if (guild_current != guild_updated)
     {
         guild_save_task = SaveLeaderboard(guild_leaderboard_file, guild_updated);
-        if (guild_updated.High != guild_current?.High && config.EnduranceRoleId is ulong endurance_role_id && duration > TimeSpan.FromHours(8))
+        if (guild.GetUser(client.CurrentUser.Id)?.GuildPermissions.ManageRoles ?? false)
         {
-            var endurance_role = guild.GetRole(endurance_role_id);
-            if (endurance_role is not null)
+            if (guild_updated.High != guild_current?.High && config.EnduranceRoleId is ulong endurance_role_id && duration > TimeSpan.FromHours(8))
             {
-                foreach (var previous in endurance_role.Members)
-                    await previous.RemoveRoleAsync(endurance_role_id);
-                await user.AddRoleAsync(endurance_role_id);
+                var endurance_role = guild.GetRole(endurance_role_id);
+                if (endurance_role is not null)
+                {
+                    foreach (var previous in endurance_role.Members)
+                        await previous.RemoveRoleAsync(endurance_role_id);
+                    await user.AddRoleAsync(endurance_role_id);
+                }
             }
-        }
-        if (guild_updated.Low != guild_current?.Low && config.RtaRoleId is ulong rta_role_id && duration < TimeSpan.FromSeconds(1.5))
-        {
-            var rta_role = guild.GetRole(rta_role_id);
-            if (rta_role is not null)
+            if (guild_updated.Low != guild_current?.Low && config.RtaRoleId is ulong rta_role_id && duration < TimeSpan.FromSeconds(1.5))
             {
-                foreach (var previous in rta_role.Members)
-                    await previous.RemoveRoleAsync(rta_role_id);
-                await user.AddRoleAsync(rta_role_id);
+                var rta_role = guild.GetRole(rta_role_id);
+                if (rta_role is not null)
+                {
+                    foreach (var previous in rta_role.Members)
+                        await previous.RemoveRoleAsync(rta_role_id);
+                    await user.AddRoleAsync(rta_role_id);
+                }
             }
         }
     }
