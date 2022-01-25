@@ -89,109 +89,109 @@ client.MessageReceived += async (message) =>
 
             
             var reader = new ContentReader(message.Content);
-            if (!reader.TryReadMentionId(Mention.USER, Mention.NICKNAME, out ulong first_mentioned_role_id)
-                && first_mentioned_role_id == client.CurrentUser.Id)
-                return;
-            reader.TrimStart();
-            // global commands
-            if (reader.TryReadText("leaderboard") || reader.TryReadText("stats"))
+            if (reader.TryReadMentionId(Mention.USER, Mention.NICKNAME, out ulong first_mentioned_role_id) && first_mentioned_role_id == client.CurrentUser.Id)
             {
-                await ReplyWithLeaderboard(guild_config, context.Guild, author, user_message);
-            }
-            if (author.Id == BOT_AUTHOR_ID
-             || author.Id == context.Guild.OwnerId
-             || author.Roles.Any(r => r.Id == guild_config.GMRoleId || r.Permissions.Administrator))
-            {
-                if (reader.TryReadText("configure"))
+                reader.TrimStart();
+                // global commands
+                if (reader.TryReadText("leaderboard") || reader.TryReadText("stats"))
                 {
-                    reader.TrimStart();
-                    if (reader.TryReadText(nameof(GuildConfig.CategoryId)) && reader.TrimStart().TryReadU64(out ulong category_id))
-                    {
-                        configs.AddOrUpdate(guild_id, id => guild_config with { CategoryId = category_id }, (id, config) => config with { CategoryId = category_id });
-                        await PersistConfig(guild_id, user_message);
-                    }
-                    else if (reader.TryReadText(nameof(GuildConfig.AccessRoleId)) && reader.TrimStart().TryReadU64(out ulong access_role_id))
-                    {
-                        configs.AddOrUpdate(guild_id, id => guild_config with { AccessRoleId = access_role_id }, (id, config) => config with { AccessRoleId = access_role_id });
-                        await PersistConfig(guild_id, user_message);
-                    }
-                    else if (reader.TryReadText(nameof(GuildConfig.LogChannelId)) && reader.TrimStart().TryReadU64(out ulong log_channel_id))
-                    {
-                        configs.AddOrUpdate(guild_id, id => guild_config with { LogChannelId = log_channel_id }, (id, config) => config with { LogChannelId = log_channel_id });
-                        await PersistConfig(guild_id, user_message);
-                    }
-                    else if (reader.TryReadText(nameof(GuildConfig.GMRoleId)) && reader.TrimStart().TryReadU64(out ulong mod_role_id))
-                    {
-                        configs.AddOrUpdate(guild_id, id => guild_config with { GMRoleId = mod_role_id }, (id, config) => config with { GMRoleId = mod_role_id });
-                        await PersistConfig(guild_id, user_message);
-                    }
-                    else if (reader.TryReadText(nameof(GuildConfig.RtaRoleId)))
-                    {
-                        ulong? rta_id = reader.TrimStart().TryReadU64(out ulong rta_role_id) ? rta_role_id : null;
-                        configs.AddOrUpdate(guild_id, id => guild_config with { RtaRoleId = rta_id }, (id, config) => config with { RtaRoleId = rta_id });
-                        if (rta_id is not null && !(context.Guild.GetUser(client.CurrentUser.Id)?.GuildPermissions.ManageRoles ?? false))
-                            await user_message.ReplyAsync("To use role features make sure I have 'ManageRoles' permission. I don't request this permission by default with the standard invite link.");
-                        await PersistConfig(guild_id, user_message);
-                    }
-                    else if (reader.TryReadText(nameof(GuildConfig.EnduranceRoleId)))
-                    {
-                        ulong? end_id = reader.TrimStart().TryReadU64(out ulong endurance_role_id) ? endurance_role_id : null;
-                        configs.AddOrUpdate(guild_id, id => guild_config with { EnduranceRoleId = end_id }, (id, config) => config with { EnduranceRoleId = end_id });
-                        if (end_id is not null && !(context.Guild.GetUser(client.CurrentUser.Id)?.GuildPermissions.ManageRoles ?? false))
-                            await user_message.ReplyAsync("To use role features make sure I have 'ManageRoles' permission. I don't request this permission by default with the standard invite link.");
-                        await PersistConfig(guild_id, user_message);
-                    }
-                    return;
+                    await ReplyWithLeaderboard(guild_config, context.Guild, author, user_message);
                 }
-                else if (reader.TryReadText("start"))
+                if (author.Id == BOT_AUTHOR_ID
+                 || author.Id == context.Guild.OwnerId
+                 || author.Roles.Any(r => r.Id == guild_config.GMRoleId || r.Permissions.Administrator))
                 {
-                    if (matches.TryGetValue(guild_id, out Match? running_match))
+                    if (reader.TryReadText("configure"))
                     {
-                        var channel = context.Guild.GetTextChannel(running_match.ChannelId);
-                        if (channel != null)
+                        reader.TrimStart();
+                        if (reader.TryReadText(nameof(GuildConfig.CategoryId)) && reader.TrimStart().TryReadU64(out ulong category_id))
                         {
-                            var time = running_match.Created.ToUnixTimeSeconds();
-                            await user_message.ReplyAsync($"A match is already running in <#{running_match.ChannelId}> since <t:{time}:f>, <t:{time}:R>", allowedMentions: AllowedMentions.None);
-                            return;
+                            configs.AddOrUpdate(guild_id, id => guild_config with { CategoryId = category_id }, (id, config) => config with { CategoryId = category_id });
+                            await PersistConfig(guild_id, user_message);
                         }
-                        else
+                        else if (reader.TryReadText(nameof(GuildConfig.AccessRoleId)) && reader.TrimStart().TryReadU64(out ulong access_role_id))
                         {
-                            matches.TryRemove(guild_id, out var _);
-                            await PersistMatch(guild_id);
-                            return;
+                            configs.AddOrUpdate(guild_id, id => guild_config with { AccessRoleId = access_role_id }, (id, config) => config with { AccessRoleId = access_role_id });
+                            await PersistConfig(guild_id, user_message);
                         }
-                    }
-                    List<string> invalid_configs = new();
-                    if (guild_config.CategoryId == 0 || context.Guild.GetCategoryChannel(guild_config.CategoryId) == null)
-                        invalid_configs.Add($"CategoryId: {guild_config.CategoryId} could not be found");
-                    if (guild_config.AccessRoleId == 0 || context.Guild.GetRole(guild_config.AccessRoleId) == null)
-                        invalid_configs.Add($"AccessRoleId: {guild_config.AccessRoleId} could not be found");
-                    if (guild_config.GMRoleId == 0 || context.Guild.GetRole(guild_config.GMRoleId) == null)
-                        invalid_configs.Add($"GMRoleId: {guild_config.GMRoleId}  could not be found");
-                    if (guild_config.LogChannelId == 0 || context.Guild.GetTextChannel(guild_config.LogChannelId) == null)
-                        invalid_configs.Add($"LogChannelId: {guild_config.LogChannelId} could not be found");
-                    if (guild_config.RtaRoleId is not null && context.Guild.GetRole(guild_config.RtaRoleId.Value) is null)
-                        invalid_configs.Add($"RtaRoleId: {guild_config.RtaRoleId} could not be found");
-                    if (guild_config.EnduranceRoleId is not null && context.Guild.GetRole(guild_config.EnduranceRoleId.Value) is null)
-                        invalid_configs.Add($"EnduranceRoleId: {guild_config.EnduranceRoleId} could not be found");
-                    if (invalid_configs.Count > 0)
-                    {
-                        await user_message.ReplyAsync(
-                            $"The following configs are unset or point to objects that could not be found: \n{string.Join(Environment.NewLine, invalid_configs)}\n"
-                            + "README: https://github.com/kelson-dev/TheButton/blob/deploy/README.md",
-                            allowedMentions: AllowedMentions.None);
+                        else if (reader.TryReadText(nameof(GuildConfig.LogChannelId)) && reader.TrimStart().TryReadU64(out ulong log_channel_id))
+                        {
+                            configs.AddOrUpdate(guild_id, id => guild_config with { LogChannelId = log_channel_id }, (id, config) => config with { LogChannelId = log_channel_id });
+                            await PersistConfig(guild_id, user_message);
+                        }
+                        else if (reader.TryReadText(nameof(GuildConfig.GMRoleId)) && reader.TrimStart().TryReadU64(out ulong mod_role_id))
+                        {
+                            configs.AddOrUpdate(guild_id, id => guild_config with { GMRoleId = mod_role_id }, (id, config) => config with { GMRoleId = mod_role_id });
+                            await PersistConfig(guild_id, user_message);
+                        }
+                        else if (reader.TryReadText(nameof(GuildConfig.RtaRoleId)))
+                        {
+                            ulong? rta_id = reader.TrimStart().TryReadU64(out ulong rta_role_id) ? rta_role_id : null;
+                            configs.AddOrUpdate(guild_id, id => guild_config with { RtaRoleId = rta_id }, (id, config) => config with { RtaRoleId = rta_id });
+                            if (rta_id is not null && !(context.Guild.GetUser(client.CurrentUser.Id)?.GuildPermissions.ManageRoles ?? false))
+                                await user_message.ReplyAsync("To use role features make sure I have 'ManageRoles' permission. I don't request this permission by default with the standard invite link.");
+                            await PersistConfig(guild_id, user_message);
+                        }
+                        else if (reader.TryReadText(nameof(GuildConfig.EnduranceRoleId)))
+                        {
+                            ulong? end_id = reader.TrimStart().TryReadU64(out ulong endurance_role_id) ? endurance_role_id : null;
+                            configs.AddOrUpdate(guild_id, id => guild_config with { EnduranceRoleId = end_id }, (id, config) => config with { EnduranceRoleId = end_id });
+                            if (end_id is not null && !(context.Guild.GetUser(client.CurrentUser.Id)?.GuildPermissions.ManageRoles ?? false))
+                                await user_message.ReplyAsync("To use role features make sure I have 'ManageRoles' permission. I don't request this permission by default with the standard invite link.");
+                            await PersistConfig(guild_id, user_message);
+                        }
                         return;
                     }
+                    else if (reader.TryReadText("start"))
+                    {
+                        if (matches.TryGetValue(guild_id, out Match? running_match))
+                        {
+                            var channel = context.Guild.GetTextChannel(running_match.ChannelId);
+                            if (channel != null)
+                            {
+                                var time = running_match.Created.ToUnixTimeSeconds();
+                                await user_message.ReplyAsync($"A match is already running in <#{running_match.ChannelId}> since <t:{time}:f>, <t:{time}:R>", allowedMentions: AllowedMentions.None);
+                                return;
+                            }
+                            else
+                            {
+                                matches.TryRemove(guild_id, out var _);
+                                await PersistMatch(guild_id);
+                                return;
+                            }
+                        }
+                        List<string> invalid_configs = new();
+                        if (guild_config.CategoryId == 0 || context.Guild.GetCategoryChannel(guild_config.CategoryId) == null)
+                            invalid_configs.Add($"CategoryId: {guild_config.CategoryId} could not be found");
+                        if (guild_config.AccessRoleId == 0 || context.Guild.GetRole(guild_config.AccessRoleId) == null)
+                            invalid_configs.Add($"AccessRoleId: {guild_config.AccessRoleId} could not be found");
+                        if (guild_config.GMRoleId == 0 || context.Guild.GetRole(guild_config.GMRoleId) == null)
+                            invalid_configs.Add($"GMRoleId: {guild_config.GMRoleId}  could not be found");
+                        if (guild_config.LogChannelId == 0 || context.Guild.GetTextChannel(guild_config.LogChannelId) == null)
+                            invalid_configs.Add($"LogChannelId: {guild_config.LogChannelId} could not be found");
+                        if (guild_config.RtaRoleId is not null && context.Guild.GetRole(guild_config.RtaRoleId.Value) is null)
+                            invalid_configs.Add($"RtaRoleId: {guild_config.RtaRoleId} could not be found");
+                        if (guild_config.EnduranceRoleId is not null && context.Guild.GetRole(guild_config.EnduranceRoleId.Value) is null)
+                            invalid_configs.Add($"EnduranceRoleId: {guild_config.EnduranceRoleId} could not be found");
+                        if (invalid_configs.Count > 0)
+                        {
+                            await user_message.ReplyAsync(
+                                $"The following configs are unset or point to objects that could not be found: \n{string.Join(Environment.NewLine, invalid_configs)}\n"
+                                + "README: https://github.com/kelson-dev/TheButton/blob/deploy/README.md",
+                                allowedMentions: AllowedMentions.None);
+                            return;
+                        }
 
-                    if (configs.TryGetValue(guild_id, out var start_config))
-                    {
-                        var channel = await context.Guild.CreateTextChannelAsync("self-destructs", func: Configure(context.Guild, start_config));
-                        var match_state = new Match(guild_id, channel.Id, DateTimeOffset.Now);
-                        await channel.SendMessageAsync("If a message is sent here the channel will be deleted");
-                        matches.AddOrUpdate(guild_id, match_state, (id, match) => match_state);
-                        _ = PersistMatch(guild_id);
-                        await user_message.ReplyAsync($"<#{channel.Id}>", allowedMentions: AllowedMentions.None);
-                        return;
+                        if (configs.TryGetValue(guild_id, out var start_config))
+                        {
+                            var channel = await context.Guild.CreateTextChannelAsync("self-destructs", func: Configure(context.Guild, start_config));
+                            var match_state = new Match(guild_id, channel.Id, DateTimeOffset.Now);
+                            await channel.SendMessageAsync("If a message is sent here the channel will be deleted");
+                            matches.AddOrUpdate(guild_id, match_state, (id, match) => match_state);
+                            _ = PersistMatch(guild_id);
+                            await user_message.ReplyAsync($"<#{channel.Id}>", allowedMentions: AllowedMentions.None);
+                            return;
+                        }
                     }
                 }
             }
