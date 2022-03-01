@@ -97,6 +97,15 @@ client.MessageReceived += async (message) =>
                 {
                     await ReplyWithLeaderboard(guild_config, context.Guild, author, user_message);
                 }
+                if (reader.TryReadText("time since") || reader.TryReadText("how long since") || reader.TryReadText("when was"))
+                {
+                    if (reader.TrimStart().TryReadU64(out ulong id))
+                    {
+                        Snowflake snowflake = id;
+                        var epoch = snowflake.ToTimestamp().ToUnixTimeSeconds().ToString();
+                        await user_message.ReplyAsync($"<t:{epoch}:R>, <t:{epoch}:F>", allowedMentions: AllowedMentions.None);
+                    }
+                }
                 if (author.Id == BOT_AUTHOR_ID
                  || author.Id == context.Guild.OwnerId
                  || author.Roles.Any(r => r.Id == guild_config.GMRoleId || r.Permissions.Administrator))
